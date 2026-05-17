@@ -146,8 +146,8 @@ public:
         const auto p = std::bit_cast<evt3::EvtTimeLow>(word);
         cur.t |= p.evt_time_low;
 
-        // TODO: what would be the cost of adding wrap around detection
-        if (p.evt_time_low < last_t_low and last_t_low - p.evt_time_low >= 4000) {
+        // TODO: what is the cost of adding packet drop detection
+        if (p.evt_time_low < last_t_low and (last_t_low - p.evt_time_low) < 4000) {
           low_packets_lost.fetch_add(1, std::memory_order_relaxed);
         }
 
