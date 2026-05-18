@@ -144,11 +144,13 @@ public:
       }
       case evt3::EventType::EVT_TIME_LOW: {
         const auto p = std::bit_cast<evt3::EvtTimeLow>(word);
+        cur.t &= ~static_cast<decltype(cur.t)>(0xfff);
         cur.t |= p.evt_time_low;
 
-        // TODO: what is the cost of adding packet drop detection
-        if (p.evt_time_low < last_t_low and (last_t_low - p.evt_time_low) < 4000) {
-          low_packets_lost.fetch_add(1, std::memory_order_relaxed);
+        if (p.evt_time_low < last_t_low) {
+          if ((last_t_low - p.evt_time_low) < 4000) {
+            low_packets_lost.fetch_add(1, std::memory_order_relaxed);
+          }
         }
 
         last_t_low = p.evt_time_low;
@@ -162,14 +164,16 @@ public:
           // NOTE(tom): resolution is 4096, this includes margin of 96
           if (diff >= 4000) {
             wrap_around_counter++;
+            cur.t &= 0xffffff;
+            cur.t |= (static_cast<decltype(cur.t)>(wrap_around_counter) << 24);
           } else {
             high_packets_lost.fetch_add(1, std::memory_order_relaxed);
           }
         }
         last_t_high = p.evt_time_high;
 
-        cur.t |= (static_cast<u32>(p.evt_time_high) << 12);
-        cur.t |= (wrap_around_counter << 24);
+        cur.t &= ~(static_cast<decltype(cur.t)>(0xfff) << 12);
+        cur.t |= (static_cast<decltype(cur.t)>(p.evt_time_high) << 12);
         break;
       }
       case evt3::EventType::CONTINUED_4: {
