@@ -106,7 +106,7 @@ public:
 
     for (size_t i = 0; i < data.size(); i += 2) {
 
-      u16 word{};
+      u16 word;
       std::memcpy(&word, data.data() + i, sizeof(word));
 
       switch (peek_header(data.data()[i + 1])) {
@@ -159,7 +159,7 @@ public:
       }
       case evt3::EventType::EVT_TIME_LOW: {
         const auto p = std::bit_cast<evt3::EvtTimeLow>(word);
-        cur.t &= ~static_cast<decltype(cur.t)>(0xfff);
+        cur.t &= time_low_clear_mask;
         cur.t |= p.evt_time_low;
 
         if (p.evt_time_low < last_t_low) {
@@ -179,7 +179,7 @@ public:
           // NOTE(tom): resolution is 4096, this includes margin of 96
           if (diff >= 4000) {
             wrap_around_counter++;
-            cur.t &= 0xffffff;
+            cur.t &= time_overflow_clear_mask;
             cur.t |= (static_cast<decltype(cur.t)>(wrap_around_counter) << 24);
           } else {
             high_packets_lost.fetch_add(1, std::memory_order_relaxed);
@@ -187,7 +187,7 @@ public:
         }
         last_t_high = p.evt_time_high;
 
-        cur.t &= ~(static_cast<decltype(cur.t)>(0xfff) << 12);
+        cur.t &= time_high_clear_mask;
         cur.t |= (static_cast<decltype(cur.t)>(p.evt_time_high) << 12);
         break;
       }
@@ -224,6 +224,10 @@ private:
 
   u32 wrap_around_counter = 0;
   std::jthread error_thread, decoder_thread;
+
+  constexpr static auto time_low_clear_mask = ~static_cast<decltype(cur.t)>(0xfff);
+  constexpr static auto time_high_clear_mask = ~(static_cast<decltype(cur.t)>(0xfff) << 12);
+  constexpr static decltype(cur.t) time_overflow_clear_mask = 0xffffff;
 };
 } // namespace decoder
 } // namespace ts
