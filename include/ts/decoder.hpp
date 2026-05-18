@@ -4,8 +4,10 @@
 #include "packets.hpp"
 #include <atomic>
 #include <bit>
+#include <chrono>
 #include <cstring>
 #include <iterator>
+#include <print>
 #include <span>
 #include <thread>
 #include <utilix/types.hpp>
@@ -74,20 +76,33 @@ inline constexpr evt3::EventType peek_header(u8 msb) {
   return static_cast<evt3::EventType>((msb & 0xf0) >> 4);
 }
 
-class CDDecoder {
+template <EventStruct T> class CDDecoder {
 public:
-  CDDecoder();
+  CDDecoder() {
+    error_thread = std::jthread([this](std::stop_token st) {
+      using namespace std::chrono_literals;
+      while (!st.stop_requested()) {
+
+        const u32 hpl = high_packets_lost.exchange(0, std::memory_order_relaxed);
+        const u32 lpl = low_packets_lost.exchange(0, std::memory_order_relaxed);
+
+        if (hpl)
+          std::println("[WARN]: {} time_high packets have been dropped", hpl);
+
+        if (lpl)
+          std::println("[WARN]: {} time_low packets have been dropped", lpl);
+
+        std::this_thread::sleep_for(std::chrono::nanoseconds(100ms));
+      }
+    });
+  }
   CDDecoder(CDDecoder &&) = delete;
   CDDecoder(const CDDecoder &) = delete;
   CDDecoder &operator=(CDDecoder &&) = delete;
   CDDecoder &operator=(const CDDecoder &) = delete;
-  ~CDDecoder();
-  void stop();
-  template <EventStruct T, std::output_iterator<T> It>
-  constexpr It decode(std::span<const u8> data, It out) {
-
-    T cur{};
-    u16 x_base = 0;
+  ~CDDecoder() {}
+  void stop() { error_thread.request_stop(); }
+  template <std::output_iterator<T> It> constexpr It decode(std::span<const u8> data, It out) {
 
     for (size_t i = 0; i < data.size(); i += 2) {
 
@@ -200,6 +215,9 @@ public:
 private:
   u16 last_t_high = 0;
   u16 last_t_low = 0;
+
+  T cur{};
+  u16 x_base = 0;
 
   std::atomic<u32> high_packets_lost{0};
   std::atomic<u32> low_packets_lost{0};
